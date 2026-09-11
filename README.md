@@ -14,3 +14,4 @@ mobile-mr-project/
 ├─ mobile-mr/      段階 1 の参照実装（デモ群）
 └─ mobile-mr-sdk/  このリポジトリ（段階 2）
 ```
+# mobile-mr-sdk
