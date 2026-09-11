@@ -6,6 +6,7 @@
 
 - 構想と 4 段階戦略: `../mobile-mr/docs/CONCEPT.md`（§6 SDK 構成案・§7 API イメージ・Phase 11）
 - 要求仕様の元: `../mobile-mr/docs/PAIN_POINTS.md`
+- このリポジトリの進め方（モジュールの着手順・完了の定義・未決定事項）: [CLAUDE.md](CLAUDE.md)
 
 ## ディレクトリ
 
