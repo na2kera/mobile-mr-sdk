@@ -65,6 +65,8 @@ CONCEPT.md §6 の構成案を、痛点の多さ・実機確認の済み具合�
   - **ビルド: tsc のみ**（ESM の .js + .d.ts を `dist/` に出す。バンドルしない）。理由: 利用側は Vite 等のバンドラを持つ前提なので素の ESM が最も扱いやすく、部分 import と tree-shaking が効く
   - **テスト: `node --test`**（追加依存ゼロ。tsc で出した `dist/` を対象に回す。ブラウザ経路はフェイク入力 + ヘッドレス Chrome のスクリプトで、mobile-mr の `scripts/headless-*.mjs` と同じ形）。理由: テスト対象の大半は Three.js 非依存の数学とルールで、ブラウザ API は jsdom では再現できない
   - **ArUco: 検出は js-aruco2 を残し、姿勢推定だけ自力実装**（4 点の平面 PnP。鏡像解の選択・重力の拘束・焦点距離の扱いを制御点として持つ）。検出側（二値化・輪郭・ID 復号）の置き換えは痛点が実害になってから。理由: 重い痛点（issue #54, #55 の傾きの誤り・鏡像解、誤差 API の罠）は姿勢推定に集中しており、検出側の痛点（CJS 迂回・ハミング距離）は軽い
+  - **ライセンス: MIT**（2026-09-19 決定。著作権者 na2kera。`LICENSE` と `package.json` の `license`）。使ってもらうことが目的なので最も緩いものを選んだ。注意: **GPL のコード（AlvaAR 等）は SDK に入れられない**（配布物全体が GPL になる。mobile-mr のデモ限定で使う）。Apache-2.0（MediaPipe / OpenCV.js）や BSD（AprilTag）のコードを写すときは、それぞれのライセンス表示と NOTICE を残す。MIT には特許の条項が無い（企業向けには Apache-2.0 が好まれることがある）。`private: true` は npm への誤公開を防ぐためのもので、ライセンスとは別（公開を決めたら外す）。決まるまで `package.json` は `"private": true` にしておく（誤って publish しないため）。
+    理由: 依存の制約・段階4 の切り出し方が見えてから決めたい。`license` フィールドは空のままにする
   - **デモページ: このリポジトリには持たない**。確認は mobile-mr から `file:../mobile-mr-sdk` で参照して該当デモを置き換えて行う（= 段階3 の作業そのもの）。理由: dev サーバー・HTTPS・フェイク入力・スキルが mobile-mr に揃っており、見本と実使用のずれも生じない。単体で切り分けたい場面が出たらその時に最小の 1 ページを足す
 
 ## やらないこと
@@ -73,8 +75,21 @@ CONCEPT.md §6 の構成案を、痛点の多さ・実機確認の済み具合�
 - mobile-mr のデモが必要としていない機能を「将来のため」に作らない。CONCEPT.md §7 の API イメージは目標であって仕様ではない
 - 段階1 の未完了項目（実機未確認のデモ、mobile-mr の open issue）をこちらで巻き取らない。それは mobile-mr 側で進める
 
+## プロジェクトスキル
+
+`.claude/skills/` に定型作業のスキルがある。該当する作業ではまずこれを使うこと。**デモページはこのリポジトリに無く、すべて `../mobile-mr/demos/` にある**（dev サーバー・HTTPS・フェイク入力・ヘッドレススクリプトも mobile-mr 側）。動作確認はそこのデモを SDK で差し替えて行う:
+
+- **new-module** — モジュールに着手する（痛点の列挙 → `docs/<module>.md` → 参照実装を写して整理 → PC 確認 → 差し替え先デモで実機）。着手順は上の表。飛ばさない
+- **pc-check** — PC での自動確認（`node --test` で `dist/` を対象 + フェイク入力のヘッドレス Chrome。mobile-mr の `scripts/test-*.mjs` / `headless-*.mjs` と同じ形）
+- **swap-demo** — 段階3 の差し替え。`../mobile-mr` 側で `file:../mobile-mr-sdk` を参照し、デモ 1 本（01 → 02 → …）を置き換えて従来と同じ挙動を確認する。編集は mobile-mr のリポジトリのブランチで
+- **iphone-test** — iPhone 実機（iOS Safari）+ ゴーグルでの確認手順、URL の出し方（`https://<ホスト名>.local:<port>/`。IP 直打ちで答えない）、iOS / Android Chrome のチェックリスト（= `core` が吸収すべき制約）
+- **pain-point** — SDK 側の痛点（主に差し替えで見つかる API の使いにくさ）を `docs/PAIN_POINTS.md` に残す。形式は mobile-mr と同じ
+
+`.agents/skills/threejs-fundamentals` は mobile-mr と同じ Three.js の一般リファレンス（`src/three/` のアダプタを書くときに参照）。
+mobile-mr 側の作業（差し替えのブランチ、新デモ）ではそちらの `.claude/skills/`（`new-demo` / `pain-point` / `iphone-test` / `dev-address`）に従う。
+
 ## 開発環境の前提
 
-- 実機検証は **iPhone（iOS Safari）+ スマホ用 VR ゴーグル**中心。センサー・カメラは HTTPS 必須。手順は mobile-mr の `iphone-test` / `dev-address` スキルに従う
-- 痛点の記録はこのリポジトリでも成果物の一部（`docs/PAIN_POINTS.md`。形式は mobile-mr の `pain-point` スキルと同じ）
+- 実機検証は **iPhone（iOS Safari）+ スマホ用 VR ゴーグル**中心。センサー・カメラは HTTPS 必須。手順は **iphone-test** / **swap-demo** スキルに従う（デモと dev サーバーは `../mobile-mr` 側）
+- 痛点の記録はこのリポジトリでも成果物の一部（`docs/PAIN_POINTS.md`。**pain-point** スキル。形式は mobile-mr と同じ）
 - 応答は日本語。「完了」は実機またはブラウザで動かして確認してから

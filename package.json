@@ -1,0 +1,29 @@
+{
+  "name": "mobile-mr-sdk",
+  "version": "0.0.0",
+  "description": "URL を開いた複数のスマートフォンを、同じ現実空間を共有する MR デバイス群に変えるためのライブラリ",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "default": "./dist/core/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test 'test/**/*.test.mjs'",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.2"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
