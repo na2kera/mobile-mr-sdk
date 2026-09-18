@@ -45,21 +45,80 @@ test("iOS 許可済み（リピーター）: センサー → カメラ → 全�
 
 // タップの効力（transient activation）は Promise の続きへ引き継がれるが時間の上限があり、
 // Safari は 1 秒（WebKit の maximumIntervalForUserGestureForwarding）、Chrome は 5 秒。
-// 効くのは await の回数ではなくタップからの経過時間なので、固定できるのは「マクロタスクを挟まない」こと。
-// タイマー・通信・ダイアログの待ち時間を start() の途中に足すとこのテストが落ちる
-test("iOS 許可済み: タップ → requestFullscreen の間にマクロタスク（タイマー）を挟まない", async () => {
+// 効くのは await の回数ではなくタップからの経過時間なので、次の 2 本で別々に固定する:
+//   (1) start() の経路にマクロタスクを挟まない（= 非同期な副作用の完了を待ってから全画面化しない）
+//   (2) 1 秒を超えたときに何が起きるか（needs-tap に落ちる = 2 タップ目の導線に乗る）
+// 偽 env の watchSensorEvents / requestWakeLock はどちらも setTimeout(0) 経由で解決させる。
+// 将来これらを await するように書き換えたら (1) が落ちる（即解決の偽物だと落ちない）
+test("タップの効力: センサー監視・Wake Lock の完了を待たずに全画面化まで到達する（マクロタスクを挟まない）", async () => {
   let timerFired = false;
-  let checked = false;
-  const env = fakeEnv({
-    requestFullscreen: async () => {
-      assert.equal(timerFired, false, "start() の前に仕掛けた setTimeout(0) より先に全画面化まで到達すること");
-      checked = true;
+  let env;
+  env = fakeEnv({
+    watchSensorEvents: () => {
+      env.calls.push("watch");
+      return new Promise((resolve) =>
+        setTimeout(() => {
+          env.calls.push("watch:done");
+          resolve(true);
+        }, 0),
+      );
+    },
+    requestWakeLock: () => {
+      env.calls.push("wake");
+      return new Promise((resolve) =>
+        setTimeout(() => {
+          env.calls.push("wake:done");
+          resolve({ release: async () => {}, onRelease: () => {} });
+        }, 0),
+      );
     },
   });
   const session = createSession({ env });
   setTimeout(() => (timerFired = true), 0);
-  await session.start({ camera: async () => {} });
-  assert.equal(checked, true);
+  await session.start({ camera: async () => void env.calls.push("camera") });
+
+  assert.equal(timerFired, false, "start() の前に仕掛けた setTimeout(0) より先に全画面化まで到達すること");
+  assert.deepEqual(env.calls, ["contextmenu", "wake", "sensor", "watch", "camera", "fullscreen", "lock:landscape"]);
+  await flush();
+  const at = (name) => env.calls.indexOf(name);
+  assert.ok(at("fullscreen") < at("watch:done"), "全画面化はセンサー監視の完了より前");
+  assert.ok(at("fullscreen") < at("wake:done"), "全画面化は Wake Lock の取得完了より前");
+});
+
+// 仮想時計で Safari の 1 秒窓そのものを再現する（実時間は待たない）。
+// requestFullscreen は「タップからの仮想経過時間が 1000ms を超えていたら NotAllowedError」で reject する
+const gestureWindowEnv = () => {
+  let tapAt = 0;
+  const env = fakeEnv({
+    requestFullscreen: async () => {
+      if (env.now() - tapAt > 1000) throw new DOMException("gesture expired", "NotAllowedError");
+      env.calls.push("fullscreen");
+    },
+  });
+  env.tap = () => {
+    tapAt = env.now();
+  };
+  return env;
+};
+
+test("タップの効力: 1 秒窓を超えると全画面化が拒否され needs-tap に落ちる（2 タップ目の導線）", async () => {
+  const env = gestureWindowEnv();
+  const session = createSession({ env });
+  env.tap();
+  // カメラ取得に 1050ms かかった（02 以降の getUserMedia を想定）
+  const state = await session.start({ camera: async () => void env.advance(1050) });
+  assert.equal(state.fullscreen, "needs-tap");
+  assert.match(state.fullscreenError, /NotAllowedError/);
+  assert.ok(!env.calls.includes("fullscreen"));
+});
+
+test("タップの効力: 1 秒窓の内側なら全画面化まで 1 タップで通る", async () => {
+  const env = gestureWindowEnv();
+  const session = createSession({ env });
+  env.tap();
+  const state = await session.start({ camera: async () => void env.advance(950) });
+  assert.equal(state.fullscreen, "ok");
+  assert.ok(env.calls.includes("fullscreen"));
 });
 
 test("iOS 初回: ダイアログで activation が切れて全画面化が拒否 → needs-tap → 2 タップ目で ok", async () => {

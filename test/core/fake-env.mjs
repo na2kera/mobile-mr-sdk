@@ -71,6 +71,10 @@ export function fakeEnv(overrides = {}) {
     releaseWakeLock() {
       for (const cb of wakeReleaseCbs) cb();
     },
+    /** 仮想時計だけを進める（フレームは回さない）。タップの効力の 1 秒窓のテストで使う */
+    advance(ms) {
+      now += ms;
+    },
     /** 予約されたフレームを 1 つ進める */
     frame(dt = 16) {
       now += dt;
