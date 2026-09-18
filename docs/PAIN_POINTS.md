@@ -18,3 +18,10 @@
 - **どう対処したか**: 01 に `lastInFullscreen` を置いて差分検出
 - **SDK の API をどう変えるか（案）**: `session.on("fullscreen", inFullscreen => ...)` のような項目別のイベントを持つ（`sensor` と同じ扱い）。`change` は「何かが変わった」の粗い通知として残す
 - **関連**: `src/core/session.ts:173`（`onFullscreenChange`）、`../mobile-mr/demos/01-stereo-box/main.ts:169`（`lastInFullscreen`）
+
+## [2026-09-18] core: センサーイベント監視の失敗が state にも error にも出なかった
+
+- **何が苦しかったか**: `settleSensor` が `void env.watchSensorEvents(...).then(ok => ...)` と reject を捨てていたため、監視が throw すると `sensor.events` が `"pending"` のまま残り、利用側（01 の HUD）は「まだ計測中」を永久に表示する。未処理の Promise rejection にもなる。「許可は取れたのにイベントが届かない」は Chrome のサイト設定で実際に起きる経路で、そこを観測するための監視自体が黙って死ぬのは一番困る形だった（Codex のレビューで指摘）
+- **どう対処したか**: `then(ok, error)` の 2 引数にして、reject では `events = "none"`（届かなかった側に倒す）+ `error` イベント `name: "sensor:watch"`。退行防止テストを 1 本追加
+- **SDK の API をどう変えるか（案）**: core の中で `void promise.then(...)` を書く箇所は、すべて「失敗したときどの状態に倒すか」を決めてから書く。非同期の結果が state の 1 項目に落ちる形（`"pending"` を持つ項目）は、reject 時の落とし先を型か命名規則で強制したい
+- **関連**: `src/core/session.ts`（`settleSensor`）、`test/core/session.test.mjs`（「センサーイベントの監視が失敗」）

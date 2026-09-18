@@ -264,10 +264,19 @@ export function createSession(options: SessionOptions = {}): Session {
     emitter.emit("sensor", state.sensor);
     changed();
     if (usable) {
-      void env.watchSensorEvents(sensorWatchMs).then((ok) => {
-        state.sensor.events = ok ? "ok" : "none";
-        changed();
-      });
+      // 監視自体が失敗したときも events を pending のまま残さない（残ると利用側は永久に待つ）。
+      // 「届かなかった」= "none" に倒し、理由は error イベントで出す
+      void env.watchSensorEvents(sensorWatchMs).then(
+        (ok) => {
+          state.sensor.events = ok ? "ok" : "none";
+          changed();
+        },
+        (error: unknown) => {
+          state.sensor.events = "none";
+          emitter.emit("error", { name: "sensor:watch", error, text: errorText(error) });
+          changed();
+        },
+      );
     }
     return usable;
   };

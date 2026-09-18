@@ -105,6 +105,23 @@ test("Android Chrome 相当: 許可 API なし → no-api、イベントが届�
   assert.equal(state.wakeLock, "ok");
 });
 
+test("センサーイベントの監視が失敗: events=none に倒し、error イベントで理由を出す", async () => {
+  const env = fakeEnv({
+    watchSensorEvents: async () => {
+      throw new Error("boom");
+    },
+  });
+  const session = createSession({ env });
+  const errors = [];
+  session.on("error", (e) => errors.push(e));
+  const state = await session.start();
+  await flush();
+  assert.equal(state.sensor.events, "none", "pending のまま残さない");
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].name, "sensor:watch");
+  assert.equal(errors[0].text, "Error: boom");
+});
+
 test("非対応の環境: Fullscreen / lock / Wake Lock が無ければ unsupported", async () => {
   const env = fakeEnv({
     requestFullscreen: undefined,
