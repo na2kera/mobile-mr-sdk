@@ -24,20 +24,27 @@ import { browserEnv, type Env, type OrientationLockType, type WakeLockHandle } f
 import { createEmitter, errorText } from "./events.js";
 import { createLoop, type Loop, type LoopError } from "./loop.js";
 
-export type Failure = { error: string };
+export type Failure = {
+  error: string;
+  /** Error.name（DOMException なら "NotAllowedError" 等）。利用側が文字列の照合なしで種別を見られるように持つ */
+  name?: string;
+};
 export type Outcome = "ok" | "unsupported" | "skipped" | Failure;
+
+/** 状態は公開時は読み取り専用（利用側が `state.started = false` 等で内部の不変条件を壊せないように）。内部だけ可変で扱う */
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 export type SensorState = {
   /** iOS: ダイアログの結果。Chrome: 即 granted。API が無ければ "no-api"。PC / sensors:false は "skipped" */
-  permission: "pending" | "granted" | "denied" | "no-api" | "skipped" | Failure;
+  readonly permission: "pending" | "granted" | "denied" | "no-api" | "skipped" | Failure;
   /** 許可のあと deviceorientation が実際に届いたか（3 秒監視）。届かなければ "none"（Chrome のサイト設定でブロック等） */
-  events: "pending" | "ok" | "none" | "skipped";
+  readonly events: "pending" | "ok" | "none" | "skipped";
   /**
    * 頭追従を始めてよいか（granted / no-api / PC / sensors:false のときに true）。denied とエラーは false。
    * 「どの permission なら始めてよいか」の規則を利用側に散らさないために core が持つ。
    * events は待たない（届くかどうかは 3 秒かけて分かるので、始めてから "none" に落とす）
    */
-  usable: boolean;
+  readonly usable: boolean;
 };
 
 /** "needs-tap" = ジェスチャーが要る（初回の activation 失効・解除後の再入）。利用側はこのときだけボタンを出す */
@@ -45,18 +52,25 @@ export type FullscreenState = "pending" | "ok" | "unsupported" | "skipped" | "ne
 
 export type SessionState = {
   readonly touch: boolean;
-  started: boolean;
-  sensor: SensorState;
-  camera: "pending" | Outcome;
-  fullscreen: FullscreenState;
+  readonly started: boolean;
+  readonly sensor: SensorState;
+  /** カメラは Outcome と違い "unsupported" にはならない（開始関数を渡さなければ "skipped"） */
+  readonly camera: "pending" | "ok" | "skipped" | Failure;
+  readonly fullscreen: FullscreenState;
   /** fullscreen が "needs-tap" になった原因（HUD 用） */
-  fullscreenError?: string;
-  orientation: "pending" | Outcome;
-  wakeLock: "pending" | "released" | Outcome;
-  inFullscreen: boolean;
+  readonly fullscreenError?: string;
+  readonly orientation: "pending" | Outcome;
+  readonly wakeLock: "pending" | "released" | Outcome;
+  readonly inFullscreen: boolean;
   /** pagehide で畳んだまま（bfcache に入っている / 復帰前） */
-  suspended: boolean;
+  readonly suspended: boolean;
   /** bfcache 復帰後、再開にジェスチャーが要るリソース名。`resume()` をタップ内で呼ぶ */
+  readonly pendingResume: readonly string[];
+};
+
+/** createSession の内部だけが使う可変版。外に出すのは常に読み取り専用の SessionState */
+type MutableSessionState = Mutable<Omit<SessionState, "sensor" | "pendingResume">> & {
+  sensor: Mutable<SensorState>;
   pendingResume: string[];
 };
 
@@ -112,14 +126,15 @@ export type SessionOptions = {
   sensorWatchMs?: number;
 };
 
-const failure = (e: unknown): Failure => ({ error: errorText(e) });
+const failure = (e: unknown): Failure =>
+  e instanceof Error ? { error: errorText(e), name: e.name } : { error: errorText(e) };
 
 export function createSession(options: SessionOptions = {}): Session {
   const env = options.env ?? browserEnv();
   const sensorWatchMs = options.sensorWatchMs ?? 3000;
   const emitter = createEmitter<SessionEvents>();
 
-  const state: SessionState = {
+  const state: MutableSessionState = {
     touch: env.touch,
     started: false,
     sensor: { permission: "pending", events: "pending", usable: false },
@@ -234,7 +249,7 @@ export function createSession(options: SessionOptions = {}): Session {
       try {
         if ((await resource.resume({ inGesture })) === "needs-gesture") pending.push(name);
       } catch (error) {
-        emitter.emit("error", { name: `resume:${name}`, error, text: errorText(error) });
+        emitter.emit("error", { kind: "resume", name: `resume:${name}`, error, text: errorText(error) });
         pending.push(name);
       }
     }
@@ -255,7 +270,7 @@ export function createSession(options: SessionOptions = {}): Session {
       try {
         resource.suspend();
       } catch (error) {
-        emitter.emit("error", { name: `suspend:${name}`, error, text: errorText(error) });
+        emitter.emit("error", { kind: "suspend", name: `suspend:${name}`, error, text: errorText(error) });
       }
     }
     changed();
@@ -305,7 +320,7 @@ export function createSession(options: SessionOptions = {}): Session {
       };
       const watchFailed = (error: unknown) => {
         state.sensor.events = "none";
-        emitter.emit("error", { name: "sensor:watch", error, text: errorText(error) });
+        emitter.emit("error", { kind: "sensor", name: "sensor:watch", error, text: errorText(error) });
         changed();
       };
       // env は差し替え前提の公開 API なので、Promise を返す前に同期 throw する実装も reject と同じに扱う。

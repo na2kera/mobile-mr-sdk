@@ -163,7 +163,7 @@ test("許可 API が throw: エラーとして返し、カメラは続ける", a
   });
   const session = createSession({ env });
   const state = await session.start({ camera: async () => {} });
-  assert.deepEqual(state.sensor.permission, { error: "Error: boom" });
+  assert.deepEqual(state.sensor.permission, { error: "Error: boom", name: "Error" });
   assert.equal(state.camera, "ok");
   assert.equal(state.fullscreen, "skipped");
 });
@@ -215,6 +215,7 @@ test("センサーイベントの監視が同期 throw: reject と同じく even
   assert.equal(state.sensor.events, "none");
   assert.equal(errors.length, 1);
   assert.equal(errors[0].name, "sensor:watch");
+  assert.equal(errors[0].kind, "sensor");
   assert.equal(errors[0].text, "Error: sync boom");
 });
 
@@ -247,7 +248,7 @@ test("カメラが失敗しても全画面化は続ける", async () => {
       throw new DOMException("denied", "NotAllowedError");
     },
   });
-  assert.deepEqual(state.camera, { error: "NotAllowedError: denied" });
+  assert.deepEqual(state.camera, { error: "NotAllowedError: denied", name: "NotAllowedError" });
   assert.equal(state.fullscreen, "ok");
 });
 

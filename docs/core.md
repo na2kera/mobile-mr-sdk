@@ -51,16 +51,26 @@ const result = await session.start({
   suppressContextMenu: true,                  // 長押しの contextmenu を止める
 });
 // result（= session.state と同じ形。以後は "change" イベントで更新）
+// state は読み取り専用（Readonly。ネストした sensor / pendingResume も）。内部の不変条件を
+// 利用側が書き換えて壊せないようにしてある（例: state.started = false で start() の 1 回制限を突破する）
 // {
-//   sensor:      { permission: "granted" | "denied" | "no-api" | { error }, events: "pending" | "ok" | "none",
-//                  usable: boolean },   // 頭追従を始めてよいか。granted / no-api / PC / sensors:false で true
-//   camera:      "ok" | "skipped" | { error },
-//   fullscreen:  "ok" | "unsupported" | "needs-tap" | { error },
-//   orientation: "ok" | "unsupported" | "skipped" | { error },
-//   wakeLock:    "ok" | "unsupported" | "released" | { error },
+//   started:     boolean,                    // start() を呼んだか
+//   sensor:      { permission: "pending" | "granted" | "denied" | "no-api" | "skipped" | { error, name? },
+//                  events: "pending" | "ok" | "none" | "skipped",
+//                  usable: boolean },        // 頭追従を始めてよいか。granted / no-api / PC / sensors:false で true。
+//                                            //   denied とエラーで false。events は待たない（後から "none" に落ちる）
+//   camera:      "pending" | "ok" | "skipped" | { error, name? },   // 開始関数を渡さなければ "skipped"
+//   fullscreen:  "pending" | "ok" | "unsupported" | "skipped" | "needs-tap",
+//   fullscreenError?: string,                // needs-tap になった原因（HUD 用）
+//   orientation: "pending" | "ok" | "unsupported" | "skipped" | { error, name? },
+//   wakeLock:    "pending" | "ok" | "unsupported" | "released" | "skipped" | { error, name? },
 //   inFullscreen: boolean,
-//   pendingResume: string[],                 // bfcache 復帰後にジェスチャーが要るリソース名
+//   suspended:   boolean,                    // pagehide で畳んだまま（start() 済みのときだけ立つ）
+//   pendingResume: readonly string[],        // bfcache 復帰後にジェスチャーが要るリソース名
 // }
+// 失敗（{ error }）には name も入る（`error instanceof Error` のときの Error.name。DOMException なら
+// "NotAllowedError" 等）。利用側が error の文字列を照合せずに種別で分岐できる。
+// "error" イベントの payload には kind: "loop" | "resume" | "suspend" | "sensor" が入る（name の prefix と併存）
 
 session.on("change", (state) => { /* HUD やボタンの表示を更新 */ });
 session.enterFullscreen();                    // 2 タップ目・解除後の再入
@@ -82,9 +92,20 @@ const profile = createProfile("mobile-mr");  // localStorage。fov / camZoom 等
   core が `usable` として持つ（`granted` / `no-api` / PC / `sensors:false` で true、`denied` とエラーで false）。
   各デモが `permission === "granted" || permission === "no-api"` を書き写すと `sensors:false` を足したときに黙って頭追従が始まらない
 
+## 公開している API の扱い（`src/core/index.ts`）
+
+まだ利用者がいないもの・用途が限られるものを、誤解のないように明記しておく。
+
+| 公開しているもの | いまの用途 |
+| --- | --- |
+| `createSession` / `readNumber` / `readResolution` / `readFlag` | 01 の差し替えで実際に使っている |
+| `createParamRegistry` | **06 の差し替え（URL パラメータ名の衝突検出）で接続する。それまで利用者はいない** |
+| `createProfile` | **06 の差し替え（較正値の保存）で接続する。それまで利用者はいない** |
+| `Env` / `browserEnv` / `createLoop` | **差し替えとテスト用**。`createSession({ env })` に偽物を渡す経路（`test/core/fake-env.mjs`）と、Session を使わずループだけ要る場合のために公開している |
+
 ## PC での確認（済み 2026-09-12 / 更新 2026-09-18）
 
-- 純粋な部分（順序の決定、状態の遷移、`readNumber` / `profile`）は `npm test`（`node --test`。ブラウザ API は `createSession({ env })` に偽物を渡す。`test/core/fake-env.mjs`）。34 件
+- 純粋な部分（順序の決定、状態の遷移、`readNumber` / `profile`）は `npm test`（`node --test`。ブラウザ API は `createSession({ env })` に偽物を渡す。`test/core/fake-env.mjs`）。39 件
 - 経路は mobile-mr 側の `npm run check:stereo-box`（`scripts/headless-stereo-box.mjs`。タッチ端末を模擬 → granted + events-none / fs=ok / lock=NotSupported / wake=ok が HUD に出る。PC 経路 → 全部飛ばして mode=orbit）。23 件
 
 ## 差し替え先（段階 3 の先取り）
@@ -100,6 +121,12 @@ const profile = createProfile("mobile-mr");  // localStorage。fov / camZoom 等
 **02 以降でカメラを渡すと、許可済みでも `getUserMedia` が 1 秒を超えれば 2 タップ目になり得る**。
 これは core では回避できない（全画面を先にすると許可ダイアログが繰り延べられる。PAIN_POINTS 08-13 の実機観察）ので、
 `camera` モジュールの差し替えのときに実機で見る。
+
+**確認した SDK のコミット**: （ヘッドレス確認時の `git -C ../mobile-mr-sdk rev-parse --short HEAD`。`file:../mobile-mr-sdk` はパスしか記録しないので、
+どの版で確認したかはここに残す。`scripts/headless-stereo-box.mjs` が冒頭で出力する）
+
+- ヘッドレス（`npm run check:stereo-box`）: `____`
+- iPhone 実機: `____`
 
 **iPhone 実機 + ゴーグル: 未確認。** 確認項目:
 - 初回訪問（サイトデータ削除後）: 許可ダイアログ → `sensor=granted events-ok` → 「タップで全画面表示」（2 タップ目）が出る → タップで `fs=ok lock=unsupported wake=ok`

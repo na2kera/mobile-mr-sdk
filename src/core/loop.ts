@@ -19,7 +19,14 @@ export type LoopStats = {
   errors: Record<string, string>;
 };
 
-export type LoopError = { name: string; error: unknown; text: string };
+/** kind = どこで起きたか。name は "resume:camera" のように prefix 付きのままにしてある（HUD の表示互換） */
+export type LoopError = {
+  kind: "loop" | "resume" | "suspend" | "sensor";
+  /** loop なら登録名、それ以外は "resume:camera" のような prefix 付きの名前 */
+  name: string;
+  error: unknown;
+  text: string;
+};
 
 export type Loop = {
   /** 同名は置き換え。登録順に呼ぶ */
@@ -53,7 +60,7 @@ export function createLoop(env: Env, onError: (e: LoopError) => void): Loop {
         // 毎フレーム同じ失敗を繰り返す処理で通知が洪水にならないよう、内容が変わったときだけ通知する
         if (stats.errors[name] !== text) {
           stats.errors[name] = text;
-          onError({ name, error, text });
+          onError({ kind: "loop", name, error, text });
         }
       }
     }
