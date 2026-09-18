@@ -43,6 +43,25 @@ test("iOS 許可済み（リピーター）: センサー → カメラ → 全�
   assert.equal(state.wakeLock, "ok");
 });
 
+// タップの効力（transient activation）は Promise の続きへ引き継がれるが時間の上限があり、
+// Safari は 1 秒（WebKit の maximumIntervalForUserGestureForwarding）、Chrome は 5 秒。
+// 効くのは await の回数ではなくタップからの経過時間なので、固定できるのは「マクロタスクを挟まない」こと。
+// タイマー・通信・ダイアログの待ち時間を start() の途中に足すとこのテストが落ちる
+test("iOS 許可済み: タップ → requestFullscreen の間にマクロタスク（タイマー）を挟まない", async () => {
+  let timerFired = false;
+  let checked = false;
+  const env = fakeEnv({
+    requestFullscreen: async () => {
+      assert.equal(timerFired, false, "start() の前に仕掛けた setTimeout(0) より先に全画面化まで到達すること");
+      checked = true;
+    },
+  });
+  const session = createSession({ env });
+  setTimeout(() => (timerFired = true), 0);
+  await session.start({ camera: async () => {} });
+  assert.equal(checked, true);
+});
+
 test("iOS 初回: ダイアログで activation が切れて全画面化が拒否 → needs-tap → 2 タップ目で ok", async () => {
   const env = fakeEnv({ requestFullscreen: failing("activation expired") });
   const session = createSession({ env });

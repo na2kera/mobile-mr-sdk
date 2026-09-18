@@ -24,6 +24,7 @@
 | 08-12 / 01 | 同上の詳細（許可タイミング・拒否時 UX・`enabled` の意味が観測できない） | **解消** | 同上。拒否は `sensor.permission = "denied"` として観測でき、利用側が代替（OrbitControls 等）に分岐できる |
 | 08-13 / 01 | ブラウザ UI が VR 表示に被り、全画面の手段が限定的（iOS 17.2+ のみ、ジェスチャー必須） | **解消 + 明記** | `requestFullscreen` を開始フローの末尾で試み、非対応（`unsupported`）は状態として返す。100dvh のフォールバックは CSS の話なので「利用側で行う」と明記。`fullscreenchange` の解除検知と再入（`session.enterFullscreen()`）を提供 |
 | 08-13 / 01 | 全画面遷移中は許可ダイアログが出ない（1 タップに同居できない） | **解消** | ダイアログ系（センサー → カメラ）を先に直列、全画面化は最後。activation 失効で拒否されたら `fullscreen = "needs-tap"` を返し、利用側が 2 タップ目のボタンを出す |
+| 08-13 / 01 | 同上の裏側: タップの効力が続く時間に上限がある | **仕様として明記** | タップの効力（transient activation）は Promise の続き（`await`）へ引き継がれるが、**Safari は 1 秒**（WebKit `UserGestureIndicator.h` の `maximumIntervalForUserGestureForwarding { 1_s }`）、**Chrome は 5 秒**。効くのは「await の回数」ではなく**タップからの経過時間**なので、core は許可 → カメラ → 全画面化の間にタイマー・通信を挟まない（`test/core/session.test.mjs` の「マクロタスクを挟まない」で固定）。ダイアログが実際に出た初回と、カメラ取得が 1 秒を超えたときに `needs-tap` へ落ちるのは**仕様**。そのための 2 タップ目 |
 | 08-14 / 02 | 開始ジェスチャーの奪い合いにカメラ許可が 3 人目として参加 | **解消** | `start({ camera })` にカメラ開始関数を渡す形（参照実装と同じ）。順序は core が固定し、利用側は順序を知らなくてよい |
 | 08-17 / 04 | bfcache 復帰でカメラ・接続が黙って死ぬ（ライフサイクル管理が毎デモ手書き） | **解消** | `session.lifecycle.register({ suspend, resume })`。pagehide で全部 suspend、pageshow(persisted) で resume を試み、resume が `"needs-gesture"` を返したものは `session.state.pendingResume` に載せる。カメラの再取得そのものは `camera` モジュールが resume で行う |
 | 08-21 / 05 | 例外 1 回でアニメーションループが止まり、装着中は原因も見えない | **解消（前半）** | `session.loop.add(fn)` で登録した処理ごとに try/catch し、失敗は `"error"` イベント + 状態に残す（描画は止めない）。「装着中に読める 3D の状態表示」は core では**対象外**（three アダプタ以降） |
@@ -81,9 +82,9 @@ const profile = createProfile("mobile-mr");  // localStorage。fov / camZoom 等
   core が `usable` として持つ（`granted` / `no-api` / PC / `sensors:false` で true、`denied` とエラーで false）。
   各デモが `permission === "granted" || permission === "no-api"` を書き写すと `sensors:false` を足したときに黙って頭追従が始まらない
 
-## PC での確認（済み 2026-09-12）
+## PC での確認（済み 2026-09-12 / 更新 2026-09-18）
 
-- 純粋な部分（順序の決定、状態の遷移、`readNumber` / `profile`）は `npm test`（`node --test`。ブラウザ API は `createSession({ env })` に偽物を渡す。`test/core/fake-env.mjs`）。29 件
+- 純粋な部分（順序の決定、状態の遷移、`readNumber` / `profile`）は `npm test`（`node --test`。ブラウザ API は `createSession({ env })` に偽物を渡す。`test/core/fake-env.mjs`）。34 件
 - 経路は mobile-mr 側の `npm run check:stereo-box`（`scripts/headless-stereo-box.mjs`。タッチ端末を模擬 → granted + events-none / fs=ok / lock=NotSupported / wake=ok が HUD に出る。PC 経路 → 全部飛ばして mode=orbit）。23 件
 
 ## 差し替え先（段階 3 の先取り）
@@ -92,8 +93,26 @@ const profile = createProfile("mobile-mr");  // localStorage。fov / camZoom 等
 頭追従（DeviceOrientationControls）と 2 眼（StereoEffect）はこの時点では残す（`tracking` / `stereo` で置き換える）。
 置き換え前の 01 に無かった横向き固定・Wake Lock・contextmenu 抑止は 06 以降と同じ既定（on）にした。tsc / vite build / ヘッドレス Chrome は通過。
 
+頭追従の開始判定は `session.state.sensor.usable`（core が持つ規則）に寄せた。
+
+**タップの効力の 1 秒窓について**: 01 はカメラを渡さないので `start()` の中で時間のかかる処理は無く、
+許可済み経路でタップ → `requestFullscreen()` までに挟まるのはマイクロタスク 2 段だけ（参照実装 `start-flow.ts` と同じ段数）。
+**02 以降でカメラを渡すと、許可済みでも `getUserMedia` が 1 秒を超えれば 2 タップ目になり得る**。
+これは core では回避できない（全画面を先にすると許可ダイアログが繰り延べられる。PAIN_POINTS 08-13 の実機観察）ので、
+`camera` モジュールの差し替えのときに実機で見る。
+
 **iPhone 実機 + ゴーグル: 未確認。** 確認項目:
-- 初回訪問: 許可ダイアログ → 「タップで全画面表示」（2 タップ目）が出る → タップで全画面
-- 許可済み（リロード）: 1 タップで全画面まで行く。HUD に `sensor=granted events-ok` / `fs=ok lock=unsupported` / `wake=ok`
+- 初回訪問（サイトデータ削除後）: 許可ダイアログ → `sensor=granted events-ok` → 「タップで全画面表示」（2 タップ目）が出る → タップで `fs=ok lock=unsupported wake=ok`
+- 許可済み（リロード）: 1 タップで全画面まで行き、ボタンを経由しない ← 上の 1 秒窓の決着
 - 上端スワイプで解除 → ボタンが出る → 再入できる
 - 拒否したとき: 頭追従なしで続き、全画面にならない（`sensor=denied`）
+- bfcache: 別ページへ → 戻る → 箱が回り続ける・HUD が更新される（pagehide で止めたループの再開）
+- 裏に回して戻す: `wake=released` → `wake=ok`
+- ゴーグルで頭追従が差し替え前と同じ
+- （任意）Android Chrome: `fs=ok lock=ok`。モーションセンサーをブロックすると `no-events`
+
+## 次のモジュール（tracking / head）への申し送り
+
+- 頭追従の開始は `session.on("sensor", s => { if (s.usable) start(); })` を起点にする。`permission` の値で分岐しない
+- 許可要求・ジェスチャー・全画面は core の持ち物。tracking は「許可済みの前提で `deviceorientation` を姿勢に変える」だけを持つ
+- `sensor.events === "none"`（許可は取れたがイベントが届かない）は tracking では検知せず、core の状態を利用側が読む

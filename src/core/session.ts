@@ -11,6 +11,13 @@
 //     利用側が「タップで全画面表示」ボタン（2 タップ目）を出す。上端スワイプで解除されたときも同じ状態にする
 //   - 結果は「許可の有無」ではなく「センサーが実際に届いたか」「全画面・横向き固定・Wake Lock のそれぞれ」で返す
 //     （Chrome は許可ダイアログが無く granted のままイベントが届かないことがある）
+//   - **タップの効力（transient activation）は Promise の続きへ引き継がれるが、時間の上限がある**。
+//     Safari は 1 秒（WebKit `Source/WebCore/dom/UserGestureIndicator.h` の
+//     `maximumIntervalForUserGestureForwarding { 1_s }`）、Chrome は 5 秒。効くのは「await の回数」ではなく
+//     **タップからの経過時間**。よって許可 → カメラ → 全画面化の間に**タイマーや通信など時間のかかる処理を挟まない**こと
+//     （マクロタスクを挟まないことは test/core/session.test.mjs の退行防止テストで固定している）。
+//     許可ダイアログが実際に出た初回と、カメラ取得が 1 秒を超えたときに `fullscreen = "needs-tap"` へ落ちるのは**仕様**で、
+//     そのために 2 タップ目の導線（`enterFullscreen()`）がある
 // core は DOM（ボタン・オーバーレイ・HUD）を持たない。状態を返すだけで、表示は利用側が決める
 
 import { browserEnv, type Env, type OrientationLockType, type WakeLockHandle } from "./env.js";
