@@ -141,6 +141,24 @@ test("センサーイベントの監視が失敗: events=none に倒し、error 
   assert.equal(errors[0].text, "Error: boom");
 });
 
+test("センサーイベントの監視が同期 throw: reject と同じく events=none + error イベント", async () => {
+  // env は差し替え前提の公開 API なので、Promise を返す前に throw する実装も隔離する
+  const env = fakeEnv({
+    watchSensorEvents: () => {
+      throw new Error("sync boom");
+    },
+  });
+  const session = createSession({ env });
+  const errors = [];
+  session.on("error", (e) => errors.push(e));
+  const state = await session.start();
+  await flush();
+  assert.equal(state.sensor.events, "none");
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].name, "sensor:watch");
+  assert.equal(errors[0].text, "Error: sync boom");
+});
+
 test("非対応の環境: Fullscreen / lock / Wake Lock が無ければ unsupported", async () => {
   const env = fakeEnv({
     requestFullscreen: undefined,
@@ -410,4 +428,55 @@ test("change リスナーが throw しても他のリスナーと Session は止
   }
   assert.ok(seen > 0);
   assert.equal(session.state.fullscreen, "ok");
+});
+
+test("ライフサイクル: 開始前の bfcache 往復では suspended にならず resume も呼ばない（ループだけ戻る）", async () => {
+  const env = fakeEnv();
+  const session = createSession({ env });
+  const log = [];
+  session.lifecycle.register("camera", {
+    suspend: () => log.push("suspend"),
+    resume: () => {
+      log.push("resume");
+      return "ok";
+    },
+  });
+  session.loop.start(); // 01 と同じく開始ボタンより前にループを回す
+
+  env.pageHide();
+  assert.equal(session.state.suspended, false, "start() 前は畳まない（復帰で戻す相手がいない）");
+  assert.deepEqual(log, []);
+  assert.equal(session.loop.running, false, "ループだけは止め直す");
+
+  env.pageShow(true);
+  await flush();
+  assert.equal(session.state.suspended, false, "suspended が true のまま残らない");
+  assert.deepEqual(log, [], "resume も呼ばれない");
+  assert.equal(session.loop.running, true, "ループは復帰する");
+});
+
+test("ライフサイクル: 開始後の bfcache 往復は今までどおり suspend → resume する", async () => {
+  const env = fakeEnv();
+  const session = createSession({ env });
+  const log = [];
+  session.lifecycle.register("camera", {
+    suspend: () => log.push("suspend"),
+    resume: () => {
+      log.push("resume");
+      return "ok";
+    },
+  });
+  await session.start();
+  session.loop.start();
+
+  env.pageHide();
+  assert.equal(session.state.suspended, true);
+  assert.deepEqual(log, ["suspend"]);
+  assert.equal(session.loop.running, false);
+
+  env.pageShow(true);
+  await flush();
+  assert.equal(session.state.suspended, false);
+  assert.deepEqual(log, ["suspend", "resume"]);
+  assert.equal(session.loop.running, true);
 });

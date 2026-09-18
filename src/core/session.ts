@@ -247,6 +247,9 @@ export function createSession(options: SessionOptions = {}): Session {
     // 止め直さないと loop.running が true のままで、復帰後 loop.start() が早期 return して描画が戻らない
     loopWasRunning = loop.running;
     if (loopWasRunning) loop.stop();
+    // リソースの suspend と suspended は start() 済みのときだけ。開始前に往復すると
+    // pageshow 側が（started でないので）resume を呼べず、suspended が true のまま残ってしまう
+    if (!state.started) return;
     state.suspended = true;
     for (const [name, resource] of resources) {
       try {
@@ -296,17 +299,22 @@ export function createSession(options: SessionOptions = {}): Session {
     if (usable) {
       // 監視自体が失敗したときも events を pending のまま残さない（残ると利用側は永久に待つ）。
       // 「届かなかった」= "none" に倒し、理由は error イベントで出す
-      void env.watchSensorEvents(sensorWatchMs).then(
-        (ok) => {
-          state.sensor.events = ok ? "ok" : "none";
-          changed();
-        },
-        (error: unknown) => {
-          state.sensor.events = "none";
-          emitter.emit("error", { name: "sensor:watch", error, text: errorText(error) });
-          changed();
-        },
-      );
+      const watched = (ok: boolean) => {
+        state.sensor.events = ok ? "ok" : "none";
+        changed();
+      };
+      const watchFailed = (error: unknown) => {
+        state.sensor.events = "none";
+        emitter.emit("error", { name: "sensor:watch", error, text: errorText(error) });
+        changed();
+      };
+      // env は差し替え前提の公開 API なので、Promise を返す前に同期 throw する実装も reject と同じに扱う。
+      // 呼び出し自体は同期のまま（await で挟むとタップの効力の 1 秒窓を削る）
+      try {
+        void env.watchSensorEvents(sensorWatchMs).then(watched, watchFailed);
+      } catch (error) {
+        watchFailed(error);
+      }
     }
     return usable;
   };
