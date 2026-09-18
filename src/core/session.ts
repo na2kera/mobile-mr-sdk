@@ -207,6 +207,11 @@ export function createSession(options: SessionOptions = {}): Session {
     if (visible && startOptions?.wakeLock && state.wakeLock === "released") void acquireWakeLock();
   });
 
+  // ---- フレームループ ----
+  const loop = createLoop(env, (e) => emitter.emit("error", e));
+  /** pagehide の時点でループが回っていたか（bfcache 復帰でそのぶんだけ回し直す） */
+  let loopWasRunning = false;
+
   // ---- ライフサイクル ----
   const resources = new Map<string, Resource>();
   const resumeAll = async (inGesture: boolean) => {
@@ -225,6 +230,10 @@ export function createSession(options: SessionOptions = {}): Session {
   };
 
   env.onPageHide(() => {
+    // bfcache に退避されるとき、予約済みの requestAnimationFrame を捨てるブラウザがある。
+    // 止め直さないと loop.running が true のままで、復帰後 loop.start() が早期 return して描画が戻らない
+    loopWasRunning = loop.running;
+    if (loopWasRunning) loop.stop();
     state.suspended = true;
     for (const [name, resource] of resources) {
       try {
@@ -237,7 +246,14 @@ export function createSession(options: SessionOptions = {}): Session {
   });
 
   env.onPageShow((persisted) => {
-    if (!persisted || !state.started) return;
+    if (!persisted) return;
+    // ループの復帰は started に依存させない。01 はループを開始ボタンより前に回している。
+    // loop.start() は lastNow をリセットするので、復帰直後の dt が退避時間ぶん跳ねない
+    if (loopWasRunning) {
+      loopWasRunning = false;
+      loop.start();
+    }
+    if (!state.started) return;
     state.suspended = false;
     void resumeAll(false);
   });
@@ -338,8 +354,6 @@ export function createSession(options: SessionOptions = {}): Session {
     }
     return state;
   };
-
-  const loop = createLoop(env, (e) => emitter.emit("error", e));
 
   return {
     state,

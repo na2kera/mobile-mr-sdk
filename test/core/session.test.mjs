@@ -253,6 +253,51 @@ test("ライフサイクル: pagehide で suspend、bfcache 復帰で resume、�
   assert.deepEqual(log.slice(4), ["camera:resume:true"]);
 });
 
+test("ライフサイクル: pagehide でループを止め、bfcache 復帰で回し直す（dt は跳ねない）", async () => {
+  const env = fakeEnv();
+  const session = createSession({ env });
+  session.loop.add("box", () => {});
+  session.loop.start();
+  env.frame(16);
+  assert.equal(session.loop.running, true);
+  assert.equal(env.pendingFrames, 1);
+
+  env.pageHide();
+  assert.equal(session.loop.running, false, "予約済みフレームを捨てるブラウザに備えて止め直す");
+  assert.equal(env.pendingFrames, 0);
+
+  env.pageShow(true);
+  assert.equal(session.loop.running, true);
+  assert.equal(env.pendingFrames, 1);
+  env.frame(5000); // 退避していた時間ぶん now が飛ぶ
+  assert.equal(session.loop.stats.lastDtMs, 0, "復帰直後の dt は退避時間ぶん跳ねない");
+});
+
+test("ライフサイクル: 開始前でもループの復帰はする。通常のロード（persisted=false）では何もしない", async () => {
+  const env = fakeEnv();
+  const session = createSession({ env });
+  session.loop.start(); // start() より前にループを回す（01 と同じ形）
+  env.pageHide();
+  assert.equal(session.loop.running, false);
+  env.pageShow(true);
+  assert.equal(session.loop.running, true, "started に依存させない");
+
+  // 止まっていたループは復帰で勝手に動き出さない
+  const env2 = fakeEnv();
+  const session2 = createSession({ env: env2 });
+  env2.pageHide();
+  env2.pageShow(true);
+  assert.equal(session2.loop.running, false);
+
+  // persisted=false（通常のロード）ではループに触らない
+  const env3 = fakeEnv();
+  const session3 = createSession({ env: env3 });
+  session3.loop.start();
+  env3.pageHide();
+  env3.pageShow(false);
+  assert.equal(session3.loop.running, false);
+});
+
 test("ライフサイクル: resume が throw しても他を止めず、error イベント + pending に残す", async () => {
   const env = fakeEnv();
   const session = createSession({ env });
