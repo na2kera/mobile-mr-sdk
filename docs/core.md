@@ -116,3 +116,5 @@ const profile = createProfile("mobile-mr");  // localStorage。fov / camZoom 等
 - 頭追従の開始は `session.on("sensor", s => { if (s.usable) start(); })` を起点にする。`permission` の値で分岐しない
 - 許可要求・ジェスチャー・全画面は core の持ち物。tracking は「許可済みの前提で `deviceorientation` を姿勢に変える」だけを持つ
 - `sensor.events === "none"`（許可は取れたがイベントが届かない）は tracking では検知せず、core の状態を利用側が読む
+- tracking の差し替え先も 01 なので、mobile-mr 側は core の PR（`feature/sdk-core-01`）をマージしてから
+  `feature/sdk-tracking-01` を新しく切る（`feature/sdk-core-01` に積まない）

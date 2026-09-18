@@ -73,8 +73,21 @@ CONCEPT.md §6 の構成案を、痛点の多さ・実機確認の済み具合�
 - mobile-mr のデモが必要としていない機能を「将来のため」に作らない。CONCEPT.md §7 の API イメージは目標であって仕様ではない
 - 段階1 の未完了項目（実機未確認のデモ、mobile-mr の open issue）をこちらで巻き取らない。それは mobile-mr 側で進める
 
+## プロジェクトスキル
+
+`.claude/skills/` に定型作業のスキルがある。該当する作業ではまずこれを使うこと。**デモページはこのリポジトリに無く、すべて `../mobile-mr/demos/` にある**（dev サーバー・HTTPS・フェイク入力・ヘッドレススクリプトも mobile-mr 側）。動作確認はそこのデモを SDK で差し替えて行う:
+
+- **new-module** — モジュールに着手する（痛点の列挙 → `docs/<module>.md` → 参照実装を写して整理 → PC 確認 → 差し替え先デモで実機）。着手順は上の表。飛ばさない
+- **pc-check** — PC での自動確認（`node --test` で `dist/` を対象 + フェイク入力のヘッドレス Chrome。mobile-mr の `scripts/test-*.mjs` / `headless-*.mjs` と同じ形）
+- **swap-demo** — 段階3 の差し替え。`../mobile-mr` 側で `file:../mobile-mr-sdk` を参照し、デモ 1 本（01 → 02 → …）を置き換えて従来と同じ挙動を確認する。編集は mobile-mr のリポジトリのブランチで
+- **iphone-test** — iPhone 実機（iOS Safari）+ ゴーグルでの確認手順、URL の出し方（`https://<ホスト名>.local:<port>/`。IP 直打ちで答えない）、iOS / Android Chrome のチェックリスト（= `core` が吸収すべき制約）
+- **pain-point** — SDK 側の痛点（主に差し替えで見つかる API の使いにくさ）を `docs/PAIN_POINTS.md` に残す。形式は mobile-mr と同じ
+
+`.agents/skills/threejs-fundamentals` は mobile-mr と同じ Three.js の一般リファレンス（`src/three/` のアダプタを書くときに参照）。
+mobile-mr 側の作業（差し替えのブランチ、新デモ）ではそちらの `.claude/skills/`（`new-demo` / `pain-point` / `iphone-test` / `dev-address`）に従う。
+
 ## 開発環境の前提
 
-- 実機検証は **iPhone（iOS Safari）+ スマホ用 VR ゴーグル**中心。センサー・カメラは HTTPS 必須。手順は mobile-mr の `iphone-test` / `dev-address` スキルに従う
-- 痛点の記録はこのリポジトリでも成果物の一部（`docs/PAIN_POINTS.md`。形式は mobile-mr の `pain-point` スキルと同じ）
+- 実機検証は **iPhone（iOS Safari）+ スマホ用 VR ゴーグル**中心。センサー・カメラは HTTPS 必須。手順は **iphone-test** / **swap-demo** スキルに従う（デモと dev サーバーは `../mobile-mr` 側）
+- 痛点の記録はこのリポジトリでも成果物の一部（`docs/PAIN_POINTS.md`。**pain-point** スキル。形式は mobile-mr と同じ）
 - 応答は日本語。「完了」は実機またはブラウザで動かして確認してから
