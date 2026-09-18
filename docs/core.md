@@ -125,7 +125,7 @@ const profile = createProfile("mobile-mr");  // localStorage。fov / camZoom 等
 **確認した SDK のコミット**: （ヘッドレス確認時の `git -C ../mobile-mr-sdk rev-parse --short HEAD`。`file:../mobile-mr-sdk` はパスしか記録しないので、
 どの版で確認したかはここに残す。`scripts/headless-stereo-box.mjs` が冒頭で出力する）
 
-- ヘッドレス（`npm run check:stereo-box`）: `____`
+- ヘッドレス（`npm run check:stereo-box`）: `4365709`（2026-09-19。23 件 ALL PASS。この記録を足す直前の HEAD）
 - iPhone 実機: `____`
 
 **iPhone 実機 + ゴーグル: 未確認。** 確認項目:
