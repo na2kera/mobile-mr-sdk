@@ -20,7 +20,7 @@ test("PC（マウス）: 許可・全画面・Wake Lock を飛ばし、カメラ
   const session = createSession({ env });
   const state = await session.start({ camera: async () => void cameraCalled++ });
   assert.equal(cameraCalled, 1);
-  assert.deepEqual(state.sensor, { permission: "skipped", events: "skipped" });
+  assert.deepEqual(state.sensor, { permission: "skipped", events: "skipped", usable: true });
   assert.equal(state.camera, "ok");
   assert.equal(state.fullscreen, "skipped");
   assert.equal(state.wakeLock, "skipped");
@@ -172,7 +172,7 @@ test("オプション: sensors / fullscreen / wakeLock / orientationLock / suppr
     suppressContextMenu: false,
   });
   assert.deepEqual(env.calls, []);
-  assert.deepEqual(state.sensor, { permission: "skipped", events: "skipped" });
+  assert.deepEqual(state.sensor, { permission: "skipped", events: "skipped", usable: true });
   assert.equal(state.fullscreen, "skipped");
   assert.equal(state.wakeLock, "skipped");
 });
@@ -183,6 +183,54 @@ test("sensors:false でも全画面化はする（センサー無しの用途）
   const state = await session.start({ sensors: false });
   assert.equal(state.fullscreen, "ok");
   assert.ok(!env.calls.includes("sensor"));
+});
+
+test("sensor.usable: 頭追従を始めてよいかの規則を core が持つ", async () => {
+  // granted（iOS 許可済み）
+  const granted = createSession({ env: fakeEnv() });
+  assert.equal(granted.state.sensor.usable, false, "start() の前は false");
+  assert.equal((await granted.start()).sensor.usable, true);
+
+  // no-api（Android Chrome）— イベントが届かなくても「始めてよい」は true のまま
+  const noApi = createSession({
+    env: fakeEnv({ requestSensorPermission: undefined, watchSensorEvents: async () => false }),
+  });
+  const noApiState = await noApi.start();
+  assert.equal(noApiState.sensor.usable, true);
+  await flush();
+  assert.equal(noApiState.sensor.events, "none");
+  assert.equal(noApiState.sensor.usable, true);
+
+  // denied
+  const denied = createSession({ env: fakeEnv({ requestSensorPermission: async () => "denied" }) });
+  assert.equal((await denied.start()).sensor.usable, false);
+
+  // 許可 API が throw
+  const broken = createSession({
+    env: fakeEnv({
+      requestSensorPermission: async () => {
+        throw new Error("boom");
+      },
+    }),
+  });
+  assert.equal((await broken.start()).sensor.usable, false);
+
+  // sensors:false（許可を取らないが頭追従はする）
+  const skipped = createSession({ env: fakeEnv() });
+  assert.equal((await skipped.start({ sensors: false })).sensor.usable, true);
+
+  // PC（マウス）
+  const pc = createSession({ env: fakeEnv({ touch: false }) });
+  assert.equal((await pc.start()).sensor.usable, true);
+});
+
+test("sensor イベントの時点で usable が決まっている（利用側はこれだけ見て開始できる）", async () => {
+  const env = fakeEnv({ requestSensorPermission: async () => "denied" });
+  const session = createSession({ env });
+  const seen = [];
+  session.on("sensor", (s) => seen.push(s.usable));
+  await session.start();
+  assert.deepEqual(seen, [false]);
 });
 
 test("全画面の解除（上端スワイプ）→ needs-tap、再入で ok。開始前の変化では出さない", async () => {

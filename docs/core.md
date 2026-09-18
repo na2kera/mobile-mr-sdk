@@ -51,7 +51,8 @@ const result = await session.start({
 });
 // result（= session.state と同じ形。以後は "change" イベントで更新）
 // {
-//   sensor:      { permission: "granted" | "denied" | "no-api" | { error }, events: "pending" | "ok" | "none" },
+//   sensor:      { permission: "granted" | "denied" | "no-api" | { error }, events: "pending" | "ok" | "none",
+//                  usable: boolean },   // 頭追従を始めてよいか。granted / no-api / PC / sensors:false で true
 //   camera:      "ok" | "skipped" | { error },
 //   fullscreen:  "ok" | "unsupported" | "needs-tap" | { error },
 //   orientation: "ok" | "unsupported" | "skipped" | { error },
@@ -76,6 +77,9 @@ const profile = createProfile("mobile-mr");  // localStorage。fov / camZoom 等
 
 - `start()` は 1 回だけ呼べる。2 回目は reject
 - `touch = false`（PC）のときは許可・全画面・Wake Lock を飛ばし、`camera` だけ呼ぶ（参照実装と同じ）
+- 頭追従は `session.on("sensor", s => { if (s.usable) startControls(); })` で始める。「どの `permission` なら始めてよいか」は
+  core が `usable` として持つ（`granted` / `no-api` / PC / `sensors:false` で true、`denied` とエラーで false）。
+  各デモが `permission === "granted" || permission === "no-api"` を書き写すと `sensors:false` を足したときに黙って頭追従が始まらない
 
 ## PC での確認（済み 2026-09-12）
 

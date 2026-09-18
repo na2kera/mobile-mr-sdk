@@ -25,6 +25,12 @@ export type SensorState = {
   permission: "pending" | "granted" | "denied" | "no-api" | "skipped" | Failure;
   /** 許可のあと deviceorientation が実際に届いたか（3 秒監視）。届かなければ "none"（Chrome のサイト設定でブロック等） */
   events: "pending" | "ok" | "none" | "skipped";
+  /**
+   * 頭追従を始めてよいか（granted / no-api / PC / sensors:false のときに true）。denied とエラーは false。
+   * 「どの permission なら始めてよいか」の規則を利用側に散らさないために core が持つ。
+   * events は待たない（届くかどうかは 3 秒かけて分かるので、始めてから "none" に落とす）
+   */
+  usable: boolean;
 };
 
 /** "needs-tap" = ジェスチャーが要る（初回の activation 失効・解除後の再入）。利用側はこのときだけボタンを出す */
@@ -109,7 +115,7 @@ export function createSession(options: SessionOptions = {}): Session {
   const state: SessionState = {
     touch: env.touch,
     started: false,
-    sensor: { permission: "pending", events: "pending" },
+    sensor: { permission: "pending", events: "pending", usable: false },
     camera: "pending",
     fullscreen: "pending",
     orientation: "pending",
@@ -276,6 +282,7 @@ export function createSession(options: SessionOptions = {}): Session {
   const settleSensor = (permission: SensorState["permission"]) => {
     state.sensor.permission = permission;
     const usable = permission === "granted" || permission === "no-api";
+    state.sensor.usable = usable;
     state.sensor.events = usable ? "pending" : "skipped";
     emitter.emit("sensor", state.sensor);
     changed();
@@ -311,7 +318,7 @@ export function createSession(options: SessionOptions = {}): Session {
 
     // PC（マウス）はデバッグ用途: 許可・全画面・Wake Lock を飛ばしてカメラだけ
     if (!env.touch) {
-      state.sensor = { permission: "skipped", events: "skipped" };
+      state.sensor = { permission: "skipped", events: "skipped", usable: true };
       emitter.emit("sensor", state.sensor);
       state.fullscreen = "skipped";
       state.orientation = "skipped";
@@ -327,7 +334,7 @@ export function createSession(options: SessionOptions = {}): Session {
 
     let headUsable: boolean;
     if (!startOptions.sensors) {
-      state.sensor = { permission: "skipped", events: "skipped" };
+      state.sensor = { permission: "skipped", events: "skipped", usable: true };
       emitter.emit("sensor", state.sensor);
       changed();
       headUsable = true;
