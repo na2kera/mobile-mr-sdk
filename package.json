@@ -2,6 +2,7 @@
   "name": "mobile-mr-sdk",
   "version": "0.0.0",
   "description": "URL を開いた複数のスマートフォンを、同じ現実空間を共有する MR デバイス群に変えるためのライブラリ",
+  "license": "MIT",
   "type": "module",
   "private": true,
   "files": [
